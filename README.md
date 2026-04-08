@@ -4,7 +4,7 @@
 
 A Unix tool that operates on **meaning**, not structure. Like `sed`/`awk`/`jq`, but semantic. Talk to your files, logs, APIs, cloud — anything that flows through a pipe.
 
-Single static Rust binary. Zero config. Local Phi-4-mini with auto-managed daemon (~160ms/call). Optional cloud models via GitHub Models API.
+Single static Rust binary. Zero config. Works instantly on macOS 26+ via Apple Intelligence (zero download). Local Phi-4-mini with auto-managed daemon (~160ms/call). Optional cloud models via GitHub Models API.
 
 ![phil pipe demo](demos/pipe-magic.gif)
 
@@ -20,7 +20,7 @@ Or build from source:
 cargo install --path phil
 ```
 
-First run downloads Phi-4-mini (~2.5GB) to `~/.phil/models/`. After that, it's fully offline.
+On macOS 26+ (Tahoe), phil uses **Apple Intelligence** out of the box — zero download, instant first run. On other systems (or for larger context), first run downloads Phi-4-mini (~2.5GB) to `~/.phil/models/`.
 
 ## Usage
 
@@ -196,20 +196,31 @@ phil model use phi4-mini              # switch back to local
 
 ```
 $ phil model ls
+Apple Intelligence (on-device, zero download):
+  apple           built-in    ✓ active   Apple on-device model (macOS 26+, 4096 ctx)
+
 Local models:
-  phi4-mini       2.3GB  ✓ active     Phi-4-mini-instruct (Q4_K_M)
-  phi4-mini-q8    4.1GB    available   Phi-4-mini-instruct (Q8_0)
-  qwen3-1.7b     1.4GB    available   Qwen3 1.7B (Q4_K_M)
+  phi4-mini       2.3GB    ✓ installed  Phi-4-mini-instruct (Q4_K_M)
+  phi4-mini-q8    4.1GB      available  Phi-4-mini-instruct (Q8_0)
+  qwen3-1.7b     1.4GB      available  Qwen3 1.7B (Q4_K_M)
   ...
 
 GitHub Models (remote):
-  gpt-4o          cloud    ready       GPT-4o [openai]
-  o4-mini         cloud    ready       o4-mini reasoning [openai]
-  llama-3.3-70b   cloud    ready       Llama 3.3 70B [meta]
+  gpt-4o          cloud      ready      GPT-4o [openai]
+  o4-mini         cloud      ready      o4-mini reasoning [openai]
+  llama-3.3-70b   cloud      ready      Llama 3.3 70B [meta]
   ...
 ```
 
-Local for speed and privacy. Cloud for power. Same `phil` command either way.
+### Model hierarchy
+
+| Backend | When | Latency | Download |
+|---------|------|---------|----------|
+| Apple Intelligence | macOS 26+, no model installed | ~300ms | **0 bytes** |
+| Local Phi-4-mini (daemon) | After `phil model install phi4-mini` | **~160ms** | 2.3GB |
+| GitHub Models (cloud) | After `phil auth github` | ~800ms | 0 bytes |
+
+Phil auto-selects the best available backend. On macOS 26+, first run uses Apple Intelligence with zero download. Install a local model for faster inference and larger context, or authenticate with GitHub for GPT-4o/Llama 70B when you need more power.
 
 ## Performance
 
@@ -283,12 +294,13 @@ Subcommands:
 ## Architecture
 
 ```
-phil-core/     Shared library: inference, daemon, packs, config, models, GitHub API
+phil-core/     Shared library: inference, daemon, packs, config, models, Apple/GitHub API
 phil/          CLI binary — pipes, prompts, packs, --do, daemon
+phil-apple/    Swift helper: bridges Apple Intelligence (FoundationModels) to phil
 any2mcp/       Turn any CLI into an MCP server
 ```
 
-Both binaries are self-contained (~8MB each) with llama.cpp statically linked. No Python, no Docker, no API keys required for local use.
+Both Rust binaries are self-contained (~8MB each) with llama.cpp statically linked. No Python, no Docker, no API keys required for local use. On macOS 26+, the `phil-apple` helper (108KB) enables zero-download inference via Apple Intelligence.
 
 ## License
 

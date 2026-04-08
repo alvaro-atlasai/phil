@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Read, Write};
 use clap::{Parser, Subcommand};
 use phil_core::{CompletionParams, DaemonRequest, ModelManager, Pack, PhilInference};
-use phil_core::{daemon, config, github, pack, model_registry, find_model, find_github_model};
+use phil_core::{daemon, config, github, apple, pack, model_registry, find_model, find_github_model};
 
 const DEFAULT_SYSTEM_PROMPT: &str =
     "You are a concise command-line assistant. Respond directly without preamble. \
@@ -230,6 +230,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    // Check if active model is Apple Intelligence
+    let use_apple = if cli.model.is_none() && github_model.is_none() {
+        let cfg = config::load_config()?;
+        cfg.model.active == "apple"
+    } else {
+        false
+    };
+
     // --each mode: process each stdin line separately
     if use_each {
         if atty::is(atty::Stream::Stdin) {
@@ -238,12 +246,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref gh) = github_model {
             return run_each_github(&prompt, &system_prompt, gh, max_tokens, temperature).await;
         }
+        if use_apple {
+            return run_each_apple(&prompt, &system_prompt, max_tokens, temperature).await;
+        }
         return run_each(&prompt, &system_prompt, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
     }
 
     // --do mode: generate shell command and execute with confirmation
     if cli.execute {
-        return run_do(&prompt, &github_model, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
+        return run_do(&prompt, &github_model, use_apple, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
     }
 
     // Read stdin if piped
@@ -276,8 +287,51 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Apple Intelligence — call phil-apple helper
+    if use_apple {
+        match apple::apple_complete(&system_prompt, &user_input, temperature, max_tokens) {
+            Ok(text) => {
+                print!("{text}");
+                if !text.ends_with('\n') {
+                    println!();
+                }
+                return Ok(());
+            }
+            Err(apple::AppleError::Unavailable(msg)) => {
+                eprintln!("phil: Apple Intelligence unavailable ({msg})");
+                eprintln!("      Install a local model: phil model install phi4-mini");
+                eprintln!("      Or use cloud models:   phil auth github");
+                return Err("Apple Intelligence not available".into());
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
     // Try daemon mode (unless --no-daemon)
     if !cli.no_daemon && cli.model.is_none() {
+        // If no local model is installed yet and Apple is available, use Apple
+        // instead of triggering a 2.5GB download on first run
+        if !daemon::daemon_is_running().await {
+            let mgr = ModelManager::new()?;
+            let has_local_model = mgr.resolve_model_path().map(|p| p.exists()).unwrap_or(false);
+            if !has_local_model && apple::apple_available() {
+                eprintln!("phil: no local model installed — using Apple Intelligence (zero download)");
+                eprintln!("      For larger context: phil model install phi4-mini");
+                match apple::apple_complete(&system_prompt, &user_input, temperature, max_tokens) {
+                    Ok(text) => {
+                        print!("{text}");
+                        if !text.ends_with('\n') {
+                            println!();
+                        }
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        eprintln!("phil: Apple fallback failed ({e}), downloading local model...");
+                    }
+                }
+            }
+        }
+
         // Ensure daemon is running
         if let Err(e) = ensure_daemon_running().await {
             eprintln!("phil: {e}, falling back to direct mode");
@@ -424,10 +478,40 @@ async fn run_each_github(
     Ok(())
 }
 
+/// Process each stdin line via Apple Intelligence.
+async fn run_each_apple(
+    prompt: &str,
+    system_prompt: &str,
+    max_tokens: u32,
+    temperature: f32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        let line = line?;
+        if line.is_empty() {
+            println!();
+            continue;
+        }
+        let user_input = format!("--- INPUT DATA ---\n{line}\n--- END DATA ---\n\n{prompt}");
+        match apple::apple_complete(system_prompt, &user_input, temperature, max_tokens) {
+            Ok(text) => {
+                let text = text.trim_end();
+                println!("{text}");
+            }
+            Err(e) => {
+                eprintln!("phil: apple error on line: {e}");
+                println!("ERROR");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Generate a shell command from natural language and execute it with user confirmation.
 async fn run_do(
     prompt: &str,
     github_model: &Option<phil_core::GitHubModel>,
+    use_apple: bool,
     model: Option<&str>,
     max_tokens: u32,
     temperature: f32,
@@ -439,6 +523,8 @@ async fn run_do(
     let command_text = if let Some(ref gh) = github_model {
         let token = github::load_token()?;
         github::complete(&token, gh.api_name, system, prompt, temperature, max_tokens).await?
+    } else if use_apple {
+        apple::apple_complete(system, prompt, temperature, max_tokens)?
     } else if !no_daemon && model.is_none() {
         ensure_daemon_running().await?;
         let req = DaemonRequest {
@@ -726,12 +812,30 @@ async fn handle_model_action(action: ModelAction) -> Result<(), Box<dyn std::err
             let cfg = config::load_config()?;
             let active = cfg.model.active;
             let has_github = cfg.github.as_ref().is_some_and(|g| !g.token.is_empty());
+            let has_apple = apple::apple_available();
 
             // Compute max name across all models for alignment
             let gh_models = github::github_models();
             let max_name = registry.iter().map(|m| m.name.len())
                 .chain(gh_models.iter().map(|m| m.name.len()))
+                .chain(std::iter::once("apple".len()))
                 .max().unwrap_or(10);
+
+            // Apple Intelligence section
+            if cfg!(target_os = "macos") {
+                let is_active = active == "apple";
+                let status = if is_active {
+                    "✓ active"
+                } else if has_apple {
+                    "  ready"
+                } else {
+                    "  unavailable"
+                };
+                println!("Apple Intelligence (on-device, zero download):\n");
+                println!("  {:<width$}  {:>6}  {:<12} Apple on-device model (macOS 26+, 4096 ctx)",
+                    "apple", "built-in", status, width = max_name);
+                println!();
+            }
 
             println!("Local models:\n");
             for m in &registry {
@@ -759,6 +863,9 @@ async fn handle_model_action(action: ModelAction) -> Result<(), Box<dyn std::err
             Ok(())
         }
         ModelAction::Install { name } => {
+            if name == "apple" {
+                return Err("apple is a built-in on-device model — no install needed. Just run: phil model use apple".into());
+            }
             if find_github_model(&name).is_some() {
                 return Err(format!("{name} is a cloud model — no install needed. Just run: phil model use {name}").into());
             }
@@ -767,12 +874,18 @@ async fn handle_model_action(action: ModelAction) -> Result<(), Box<dyn std::err
             Ok(())
         }
         ModelAction::Use { name } => {
-            // Check both local and GitHub registries
+            // Check all registries: apple, local, GitHub
+            let is_apple = name == "apple";
             let is_local = find_model(&name).is_some();
             let is_github = find_github_model(&name).is_some();
 
-            if !is_local && !is_github {
+            if !is_apple && !is_local && !is_github {
                 return Err(format!("unknown model: {name}. Run `phil model ls`.").into());
+            }
+
+            if is_apple && !apple::apple_available() {
+                eprintln!("Warning: Apple Intelligence is not currently available on this system.");
+                eprintln!("Requires macOS 26+ with Apple Intelligence enabled and phil-apple helper installed.");
             }
 
             if is_github {
@@ -785,7 +898,9 @@ async fn handle_model_action(action: ModelAction) -> Result<(), Box<dyn std::err
             let mut cfg = config::load_config()?;
             cfg.model.active = name.clone();
             config::save_config(&cfg)?;
-            if is_github {
+            if is_apple {
+                println!("Active model set to: {name} (Apple Intelligence, on-device)");
+            } else if is_github {
                 println!("Active model set to: {name} (GitHub Models API)");
             } else {
                 println!("Active model set to: {name} (local)");

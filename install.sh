@@ -105,7 +105,12 @@ verify() {
         printf "    phil model ls\n"
         printf "    phil pack ls\n"
         printf "\n"
-        printf "  First run downloads the Phi-4-mini model (~2.5GB).\n"
+        if [ "$OS_NAME" = "darwin" ]; then
+            printf "  On macOS 26+, phil uses Apple Intelligence with zero download.\n"
+            printf "  For larger context or offline use: phil model install phi4-mini\n"
+        else
+            printf "  First run downloads the Phi-4-mini model (~2.5GB).\n"
+        fi
     else
         printf "\n${GREEN}✓${RESET} Binaries installed to ${INSTALL_DIR}\n"
         printf "  You may need to restart your shell or add ${INSTALL_DIR} to PATH.\n"

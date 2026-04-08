@@ -1,5 +1,6 @@
 mod model;
 mod inference;
+pub mod apple;
 pub mod config;
 pub mod daemon;
 pub mod github;
@@ -10,3 +11,4 @@ pub use inference::{PhilInference, InferenceError, CompletionParams};
 pub use daemon::{DaemonRequest, DaemonResponse};
 pub use pack::{Pack, PackError, PackMeta};
 pub use github::{GitHubError, GitHubModel, github_models, find_github_model};
+pub use apple::{apple_available, apple_complete, AppleError};
