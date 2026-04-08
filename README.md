@@ -36,8 +36,9 @@ A background daemon auto-starts on first call and keeps the model loaded in memo
 ### Fuzzy jq — ask questions about JSON
 
 ```bash
-curl -s wttr.in/London?format=j1 | phil "current temperature and wind speed, one line"
-curl -s api.github.com/orgs/charmbracelet/repos | phil "repo names and star counts, most stars first"
+curl -s 'https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.1&current_weather=true' | phil "temperature and wind speed in London"
+curl -s 'http://api.open-notify.org/iss-now.json' | phil "where is the ISS right now?"
+curl -s 'https://randomuser.me/api/?results=3&inc=name,email&noinfo' | phil "list names and emails"
 ```
 
 Nobody remembers `jq '.[] | select(.status == "active") | .name'`. Phil replaces jq for ad-hoc exploration.
