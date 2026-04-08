@@ -1,0 +1,24 @@
+[package]
+name = "phil-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local LLM inference core for phil tools"
+
+[dependencies]
+llama-cpp-2 = { version = "0.1", features = ["metal"] }
+reqwest = { version = "0.12", features = ["stream", "json"] }
+indicatif = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+dirs = "6"
+sha2 = "0.10"
+tokio = { version = "1", features = ["fs", "io-util", "net", "rt-multi-thread", "macros", "time", "sync"] }
+futures-util = "0.3"
+thiserror = "2"
+encoding_rs = "0.8"
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

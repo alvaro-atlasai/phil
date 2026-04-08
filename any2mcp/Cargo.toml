@@ -1,0 +1,24 @@
+[package]
+name = "any2mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Turn any CLI tool into an MCP server using local AI"
+
+[[bin]]
+name = "any2mcp"
+path = "src/main.rs"
+
+[dependencies]
+phil-core = { path = "../phil-core" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+shell-escape = "0.1"
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

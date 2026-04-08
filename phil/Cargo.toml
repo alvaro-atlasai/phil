@@ -1,0 +1,18 @@
+[package]
+name = "phil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pipe-native AI CLI powered by local Phi-4-mini"
+
+[[bin]]
+name = "phil"
+path = "src/main.rs"
+
+[dependencies]
+phil-core = { path = "../phil-core" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+toml = "0.8"
+atty = "0.2"
