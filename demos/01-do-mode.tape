@@ -13,14 +13,16 @@ Set Padding 20
 Hide
 Type `export PATH="$HOME/.local/bin:$PATH"`
 Enter
+# Clean slate + warm daemon
+Type `rm -rf /tmp/phil-demo && mkdir /tmp/phil-demo && cd /tmp/phil-demo`
+Enter
+Type `echo '{}' | phil "echo"`
+Enter
+Sleep 8s
 Type "clear"
 Enter
 Sleep 500ms
 Show
-
-Type `cd /tmp && rm -rf phil-demo && mkdir phil-demo && cd phil-demo`
-Enter
-Sleep 500ms
 
 Type `phil --do "create a new rust project called hello-world"`
 Enter
@@ -30,10 +32,6 @@ Type "y"
 Enter
 Sleep 3s
 
-Type "ls hello-world/src/"
-Enter
-Sleep 1.5s
-
 Type `phil --do "find all rust files in the current directory"`
 Enter
 Sleep 5s
@@ -42,6 +40,7 @@ Type "y"
 Enter
 Sleep 2s
 
+Hide
 Type "rm -rf /tmp/phil-demo"
 Enter
 Sleep 500ms
