@@ -36,11 +36,13 @@ A background daemon auto-starts on first call and keeps the model loaded in memo
 ### Fuzzy jq — ask questions about JSON
 
 ```bash
-curl api.example.com/users | phil "names of active users, one per line"
-kubectl get pods -o json | phil "which pods are crashlooping and why?"
+curl -s wttr.in/London?format=j1 | phil "current temperature and wind speed, one line"
+curl -s api.github.com/orgs/charmbracelet/repos | phil "repo names and star counts, most stars first"
 ```
 
 Nobody remembers `jq '.[] | select(.status == "active") | .name'`. Phil replaces jq for ad-hoc exploration.
+
+![fuzzy jq demo](demos/fuzzy-jq.gif)
 
 ### Git commit messages
 
