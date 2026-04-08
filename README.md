@@ -280,6 +280,7 @@ Options:
       --temperature <F>    Sampling temperature (0.0–1.0) [default: 0.1]
       --each               Process each stdin line separately
       --do                 Generate and execute shell commands
+      --dry-run            Show execution plan without calling the model
       --no-daemon          Skip the daemon, load model directly
   -h, --help               Print help
   -V, --version            Print version

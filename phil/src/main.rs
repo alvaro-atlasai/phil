@@ -70,6 +70,10 @@ struct Cli {
     #[arg(long, alias = "do")]
     execute: bool,
 
+    /// Show what phil would do without calling the model
+    #[arg(long)]
+    dry_run: bool,
+
     /// Run as the background daemon (internal use)
     #[arg(long, hide = true)]
     daemon: bool,
@@ -237,6 +241,41 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         false
     };
+
+    // --dry-run: show execution plan and exit
+    if cli.dry_run {
+        let backend = if let Some(ref gh) = github_model {
+            format!("github  ({}, cloud via GitHub Models API)", gh.name)
+        } else if use_apple {
+            "apple   (Apple Intelligence, on-device)".to_string()
+        } else if cli.model.is_some() {
+            format!("custom  ({})", cli.model.as_deref().unwrap())
+        } else {
+            let cfg = config::load_config()?;
+            format!("local   ({}, daemon={})", cfg.model.active, if cli.no_daemon { "off" } else { "on" })
+        };
+        let mode = if cli.execute {
+            "--do (generate + execute shell command)"
+        } else if use_each {
+            "--each (per-line inference)"
+        } else {
+            "completion"
+        };
+        let sys = if cli.execute { DO_SYSTEM_PROMPT } else { &system_prompt };
+        eprintln!("backend:  {backend}");
+        eprintln!("mode:     {mode}");
+        eprintln!("tokens:   {max_tokens}");
+        eprintln!("temp:     {temperature}");
+        eprintln!("system:   {}", if sys.is_empty() { "(none — --raw)" } else { &sys[..sys.len().min(120)] });
+        if sys.len() > 120 {
+            eprintln!("          ... ({} chars total)", sys.len());
+        }
+        eprintln!("prompt:   {prompt}");
+        if atty::isnt(atty::Stream::Stdin) && !use_each {
+            eprintln!("stdin:    (piped data will be prepended to prompt)");
+        }
+        return Ok(());
+    }
 
     // --each mode: process each stdin line separately
     if use_each {
