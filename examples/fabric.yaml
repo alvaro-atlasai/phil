@@ -1,0 +1,254 @@
+binary: fab
+description: Microsoft Fabric CLI — manage Fabric workspaces, lakehouses, and pipelines
+tools:
+  # --- Workspaces ---
+  - name: workspace_list
+    description: List all Fabric workspaces accessible to the current user
+    subcommand: [workspace, list]
+    args:
+      - name: output
+        description: Output format (json, table)
+        flag: --output
+        required: false
+
+  - name: workspace_show
+    description: Show details of a specific workspace
+    subcommand: [workspace, show]
+    args:
+      - name: workspace_id
+        description: Workspace ID or name
+        flag: --workspace-id
+        required: true
+
+  - name: workspace_create
+    description: Create a new Fabric workspace
+    subcommand: [workspace, create]
+    args:
+      - name: display_name
+        description: Display name for the workspace
+        flag: --display-name
+        required: true
+      - name: capacity_id
+        description: Capacity ID to assign
+        flag: --capacity-id
+        required: false
+      - name: description
+        description: Workspace description
+        flag: --description
+        required: false
+
+  # --- Lakehouses ---
+  - name: lakehouse_list
+    description: List lakehouses in a workspace
+    subcommand: [lakehouse, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+
+  - name: lakehouse_create
+    description: Create a new lakehouse
+    subcommand: [lakehouse, create]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: display_name
+        description: Lakehouse name
+        flag: --display-name
+        required: true
+
+  - name: lakehouse_table_list
+    description: List tables in a lakehouse
+    subcommand: [lakehouse, table, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: lakehouse_id
+        description: Lakehouse ID
+        flag: --lakehouse-id
+        required: true
+
+  - name: lakehouse_table_load
+    description: Load data into a lakehouse table
+    subcommand: [lakehouse, table, load]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: lakehouse_id
+        description: Lakehouse ID
+        flag: --lakehouse-id
+        required: true
+      - name: table_name
+        description: Target table name
+        flag: --table-name
+        required: true
+      - name: path_type
+        description: Source type (file or folder)
+        flag: --path-type
+        required: true
+      - name: relative_path
+        description: Relative path in the lakehouse Files section
+        flag: --relative-path
+        required: true
+
+  # --- Notebooks ---
+  - name: notebook_list
+    description: List notebooks in a workspace
+    subcommand: [notebook, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+
+  - name: notebook_create
+    description: Create a new notebook
+    subcommand: [notebook, create]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: display_name
+        description: Notebook name
+        flag: --display-name
+        required: true
+
+  - name: notebook_run
+    description: Run a notebook and wait for completion
+    subcommand: [notebook, run]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: notebook_id
+        description: Notebook ID
+        flag: --notebook-id
+        required: true
+
+  # --- Pipelines ---
+  - name: pipeline_list
+    description: List data pipelines in a workspace
+    subcommand: [pipeline, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+
+  - name: pipeline_create
+    description: Create a data pipeline
+    subcommand: [pipeline, create]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: display_name
+        description: Pipeline name
+        flag: --display-name
+        required: true
+
+  - name: pipeline_run
+    description: Trigger a pipeline run
+    subcommand: [pipeline, run]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: pipeline_id
+        description: Pipeline ID
+        flag: --pipeline-id
+        required: true
+
+  # --- Spark Job Definitions ---
+  - name: spark_job_list
+    description: List Spark job definitions
+    subcommand: [spark-job-definition, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+
+  - name: spark_job_run
+    description: Run a Spark job on demand
+    subcommand: [spark-job-definition, run]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: spark_job_id
+        description: Spark job definition ID
+        flag: --spark-job-definition-id
+        required: true
+
+  # --- Items (generic) ---
+  - name: item_list
+    description: List all items in a workspace
+    subcommand: [item, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: type
+        description: Filter by item type (e.g. Lakehouse, Notebook, Pipeline)
+        flag: --type
+        required: false
+
+  - name: item_get
+    description: Get details of a specific item
+    subcommand: [item, get]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: item_id
+        description: Item ID
+        flag: --item-id
+        required: true
+
+  # --- Capacities ---
+  - name: capacity_list
+    description: List available Fabric capacities
+    subcommand: [capacity, list]
+    args:
+      - name: output
+        description: Output format
+        flag: --output
+        required: false
+
+  # --- SQL Endpoint (Warehouse) ---
+  - name: warehouse_list
+    description: List warehouses (SQL endpoints)
+    subcommand: [warehouse, list]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+
+  - name: warehouse_create
+    description: Create a new warehouse
+    subcommand: [warehouse, create]
+    args:
+      - name: workspace_id
+        description: Workspace ID
+        flag: --workspace-id
+        required: true
+      - name: display_name
+        description: Warehouse name
+        flag: --display-name
+        required: true

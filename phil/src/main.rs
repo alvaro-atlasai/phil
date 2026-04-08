@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Read};
+use std::io::{self, BufRead, Read, Write};
 use clap::{Parser, Subcommand};
 use phil_core::{CompletionParams, DaemonRequest, ModelManager, Pack, PhilInference};
 use phil_core::{daemon, config, github, pack, model_registry, find_model, find_github_model};
@@ -6,7 +6,19 @@ use phil_core::{daemon, config, github, pack, model_registry, find_model, find_g
 const DEFAULT_SYSTEM_PROMPT: &str =
     "You are a concise command-line assistant. Respond directly without preamble. \
      When given data, analyze it as requested. Be brief and precise.";
+const DO_SYSTEM_PROMPT: &str = "\
+You are a shell command generator. Given a natural language task, output ONLY the shell command(s) to accomplish it.
 
+Rules:
+- Output raw shell commands, no markdown fences, no explanation
+- Use && to chain multiple commands on one line when possible
+- For multi-step tasks that need separate lines, output one command per line
+- Use common CLI tools (git, npm, cargo, pip, docker, curl, etc.)
+- Prefer safe defaults (e.g. mkdir -p, set -e for scripts)
+- If the task is ambiguous, pick the most common interpretation
+- Target the current OS (macOS/Linux)
+- Never output dangerous commands (rm -rf /, etc.) without explicit paths
+- If asked to create a project, use standard scaffolding tools (npm init, cargo init, etc.)";
 #[derive(Parser)]
 #[command(
     name = "phil",
@@ -18,6 +30,7 @@ const DEFAULT_SYSTEM_PROMPT: &str =
         echo '{\"name\":\"John\"}' | phil \"convert to YAML\"\n  \
         phil @explain \"what is set -euo pipefail?\"\n  \
         cat urls.txt | phil @suspicious --each\n  \
+        phil --do \"setup a new node project with express\"\n  \
         phil pack ls"
 )]
 struct Cli {
@@ -52,6 +65,10 @@ struct Cli {
     /// Process each stdin line separately (like semantic sed)
     #[arg(long)]
     each: bool,
+
+    /// Generate and execute shell commands from natural language
+    #[arg(long, alias = "do")]
+    execute: bool,
 
     /// Run as the background daemon (internal use)
     #[arg(long, hide = true)]
@@ -222,6 +239,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             return run_each_github(&prompt, &system_prompt, gh, max_tokens, temperature).await;
         }
         return run_each(&prompt, &system_prompt, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
+    }
+
+    // --do mode: generate shell command and execute with confirmation
+    if cli.execute {
+        return run_do(&prompt, &github_model, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
     }
 
     // Read stdin if piped
@@ -399,6 +421,105 @@ async fn run_each_github(
             }
         }
     }
+    Ok(())
+}
+
+/// Generate a shell command from natural language and execute it with user confirmation.
+async fn run_do(
+    prompt: &str,
+    github_model: &Option<phil_core::GitHubModel>,
+    model: Option<&str>,
+    max_tokens: u32,
+    temperature: f32,
+    no_daemon: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let system = DO_SYSTEM_PROMPT;
+
+    // Generate the command using whichever backend is active
+    let command_text = if let Some(ref gh) = github_model {
+        let token = github::load_token()?;
+        github::complete(&token, gh.api_name, system, prompt, temperature, max_tokens).await?
+    } else if !no_daemon && model.is_none() {
+        ensure_daemon_running().await?;
+        let req = DaemonRequest {
+            system_prompt: system.to_string(),
+            user_input: prompt.to_string(),
+            max_tokens,
+            temperature,
+            top_p: 0.9,
+        };
+        daemon::daemon_complete(&req).await?
+    } else {
+        let model_path = match model {
+            Some(p) => std::path::PathBuf::from(p),
+            None => {
+                let mgr = ModelManager::new()?;
+                mgr.ensure_model().await?
+            }
+        };
+        let inference = PhilInference::load(&model_path)?;
+        let params = CompletionParams {
+            max_tokens,
+            temperature,
+            ..Default::default()
+        };
+        inference.complete(system, prompt, &params)?
+    };
+
+    let command_text = command_text.trim();
+    if command_text.is_empty() {
+        return Err("model returned empty command".into());
+    }
+
+    // Strip markdown fences if model included them despite instructions
+    let command_text = command_text
+        .strip_prefix("```sh\n").or_else(|| command_text.strip_prefix("```bash\n")).or_else(|| command_text.strip_prefix("```\n"))
+        .and_then(|s| s.strip_suffix("\n```").or_else(|| s.strip_suffix("```")))
+        .unwrap_or(command_text);
+
+    // Display the command
+    eprintln!("\n  \x1b[1;36m{}\x1b[0m\n", command_text);
+
+    // Ask for confirmation
+    eprint!("Run this? [Y/n/e(dit)] ");
+    io::stderr().flush()?;
+
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    let answer = answer.trim().to_lowercase();
+
+    match answer.as_str() {
+        "" | "y" | "yes" => {
+            let status = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(command_text)
+                .status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
+        }
+        "e" | "edit" => {
+            // Let user edit the command in-line
+            eprint!("$ ");
+            io::stderr().flush()?;
+            let mut edited = String::new();
+            io::stdin().read_line(&mut edited)?;
+            let edited = edited.trim();
+            if !edited.is_empty() {
+                let status = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(edited)
+                    .status()?;
+                if !status.success() {
+                    std::process::exit(status.code().unwrap_or(1));
+                }
+            }
+        }
+        _ => {
+            eprintln!("Aborted.");
+        }
+    }
+
     Ok(())
 }
 

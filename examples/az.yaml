@@ -1,0 +1,287 @@
+binary: az
+description: Azure CLI — manage Azure resources from the command line
+tools:
+  # --- Account & Auth ---
+  - name: account_show
+    description: Show current Azure subscription and tenant details
+    subcommand: [account, show]
+    args: []
+
+  - name: account_list
+    description: List all subscriptions accessible to the current account
+    subcommand: [account, list]
+    args:
+      - name: output
+        description: Output format
+        flag: --output
+        required: false
+
+  - name: account_set
+    description: Set the active subscription
+    subcommand: [account, set]
+    args:
+      - name: subscription
+        description: Subscription name or ID
+        flag: --subscription
+        required: true
+
+  # --- Resource Groups ---
+  - name: group_list
+    description: List all resource groups in the active subscription
+    subcommand: [group, list]
+    args:
+      - name: output
+        description: Output format (table, json, tsv)
+        flag: --output
+        required: false
+
+  - name: group_create
+    description: Create a new resource group
+    subcommand: [group, create]
+    args:
+      - name: name
+        description: Resource group name
+        flag: --name
+        required: true
+      - name: location
+        description: Azure region (e.g. eastus, westeurope)
+        flag: --location
+        required: true
+
+  - name: group_delete
+    description: Delete a resource group and all its resources
+    subcommand: [group, delete]
+    args:
+      - name: name
+        description: Resource group name
+        flag: --name
+        required: true
+      - name: yes
+        description: Skip confirmation
+        flag: --yes
+        required: false
+        arg_type: bool
+
+  # --- VMs ---
+  - name: vm_list
+    description: List virtual machines
+    subcommand: [vm, list]
+    args:
+      - name: resource_group
+        description: Filter by resource group
+        flag: --resource-group
+        required: false
+
+  - name: vm_create
+    description: Create a new virtual machine
+    subcommand: [vm, create]
+    args:
+      - name: resource_group
+        description: Resource group name
+        flag: --resource-group
+        required: true
+      - name: name
+        description: VM name
+        flag: --name
+        required: true
+      - name: image
+        description: OS image (e.g. Ubuntu2204, Win2022Datacenter)
+        flag: --image
+        required: true
+      - name: size
+        description: VM size (e.g. Standard_B2s)
+        flag: --size
+        required: false
+      - name: admin_username
+        description: Admin user name
+        flag: --admin-username
+        required: false
+
+  - name: vm_start
+    description: Start a stopped VM
+    subcommand: [vm, start]
+    args:
+      - name: resource_group
+        description: Resource group
+        flag: --resource-group
+        required: true
+      - name: name
+        description: VM name
+        flag: --name
+        required: true
+
+  - name: vm_stop
+    description: Stop (deallocate) a running VM
+    subcommand: [vm, deallocate]
+    args:
+      - name: resource_group
+        description: Resource group
+        flag: --resource-group
+        required: true
+      - name: name
+        description: VM name
+        flag: --name
+        required: true
+
+  - name: vm_show
+    description: Show details of a VM
+    subcommand: [vm, show]
+    args:
+      - name: resource_group
+        description: Resource group
+        flag: --resource-group
+        required: true
+      - name: name
+        description: VM name
+        flag: --name
+        required: true
+
+  # --- Storage ---
+  - name: storage_account_list
+    description: List storage accounts
+    subcommand: [storage, account, list]
+    args:
+      - name: resource_group
+        description: Filter by resource group
+        flag: --resource-group
+        required: false
+
+  - name: storage_account_create
+    description: Create a storage account
+    subcommand: [storage, account, create]
+    args:
+      - name: name
+        description: Storage account name (globally unique)
+        flag: --name
+        required: true
+      - name: resource_group
+        description: Resource group
+        flag: --resource-group
+        required: true
+      - name: location
+        description: Azure region
+        flag: --location
+        required: true
+      - name: sku
+        description: SKU (Standard_LRS, Standard_GRS, etc.)
+        flag: --sku
+        required: false
+
+  - name: storage_blob_list
+    description: List blobs in a container
+    subcommand: [storage, blob, list]
+    args:
+      - name: container_name
+        description: Container name
+        flag: --container-name
+        required: true
+      - name: account_name
+        description: Storage account name
+        flag: --account-name
+        required: true
+
+  - name: storage_blob_upload
+    description: Upload a file to blob storage
+    subcommand: [storage, blob, upload]
+    args:
+      - name: file
+        description: Local file path
+        flag: --file
+        required: true
+      - name: container_name
+        description: Container name
+        flag: --container-name
+        required: true
+      - name: account_name
+        description: Storage account name
+        flag: --account-name
+        required: true
+      - name: name
+        description: Blob name (defaults to file name)
+        flag: --name
+        required: false
+
+  # --- App Service ---
+  - name: webapp_list
+    description: List web apps
+    subcommand: [webapp, list]
+    args:
+      - name: resource_group
+        description: Filter by resource group
+        flag: --resource-group
+        required: false
+
+  - name: webapp_create
+    description: Create a web app
+    subcommand: [webapp, create]
+    args:
+      - name: resource_group
+        description: Resource group
+        flag: --resource-group
+        required: true
+      - name: name
+        description: Web app name (globally unique)
+        flag: --name
+        required: true
+      - name: plan
+        description: App Service plan name
+        flag: --plan
+        required: true
+      - name: runtime
+        description: Runtime stack (e.g. "NODE:18-lts", "PYTHON:3.11")
+        flag: --runtime
+        required: false
+
+  # --- AKS ---
+  - name: aks_list
+    description: List AKS clusters
+    subcommand: [aks, list]
+    args:
+      - name: resource_group
+        description: Filter by resource group
+        flag: --resource-group
+        required: false
+
+  - name: aks_get_credentials
+    description: Get kubectl credentials for an AKS cluster
+    subcommand: [aks, get-credentials]
+    args:
+      - name: resource_group
+        description: Resource group
+        flag: --resource-group
+        required: true
+      - name: name
+        description: Cluster name
+        flag: --name
+        required: true
+
+  # --- Monitoring ---
+  - name: monitor_metrics_list
+    description: List metrics for a resource
+    subcommand: [monitor, metrics, list]
+    args:
+      - name: resource
+        description: Resource ID
+        flag: --resource
+        required: true
+      - name: metric
+        description: Metric name
+        flag: --metric
+        required: true
+      - name: interval
+        description: Time interval (e.g. PT1H, PT5M)
+        flag: --interval
+        required: false
+
+  - name: resource_list
+    description: List all resources in subscription or resource group
+    subcommand: [resource, list]
+    args:
+      - name: resource_group
+        description: Filter by resource group
+        flag: --resource-group
+        required: false
+      - name: resource_type
+        description: Filter by type (e.g. Microsoft.Compute/virtualMachines)
+        flag: --resource-type
+        required: false
