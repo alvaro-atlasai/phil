@@ -18,7 +18,7 @@ Enter
 Sleep 500ms
 Show
 
-Type `cd /tmp && mkdir -p phil-demo && cd phil-demo`
+Type `cd /tmp && rm -rf phil-demo && mkdir phil-demo && cd phil-demo`
 Enter
 Sleep 500ms
 
