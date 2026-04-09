@@ -207,6 +207,44 @@ phil pack add https://gist.githubusercontent.com/.../sql.toml
 
 User packs in `~/.phil/packs/` override built-ins with the same name.
 
+### Packs as MCP tools
+
+Expose all packs to AI agents (Claude, Copilot, Cursor) via MCP:
+
+```bash
+phil pack export > phil-packs.yaml
+any2mcp serve --manifest phil-packs.yaml
+```
+
+Configure in your MCP client:
+
+```json
+{"mcpServers": {"phil": {"command": "any2mcp", "args": ["phil-packs.yaml"]}}}
+```
+
+Every pack becomes a tool that external agents can call.
+
+### Agentic mode — packs as tools
+
+`--agent` lets the model autonomously decide which packs to call:
+
+```bash
+git diff --staged | phil --agent "review this diff and write a commit message"
+# phil: agent mode — 12 tools available
+#   [1/5] calling @review...
+#   ← Looks good overall, minor naming issue in...
+#   [2/5] calling @commit...
+#   ← feat(agent): add tool-calling loop with pack execution
+# feat(agent): add tool-calling loop with pack execution
+```
+
+The model sees all available packs as tools, calls them as needed, and synthesizes a final answer. Uses Phi-4-mini's native function-calling format (`<|tool|>...<|/tool|>`).
+
+```bash
+phil --agent "explain this config and convert it to JSON" < config.yaml
+# Calls @explain, then @json, combines results
+```
+
 ## Cloud Models
 
 Use GitHub Models API for heavier tasks (GPT-4o, Llama 3.3 70B, etc.):
@@ -304,14 +342,15 @@ Options:
       --temperature <F>    Sampling temperature (0.0–1.0) [default: 0.1]
       --each               Process each stdin line separately
       --do                 Generate and execute shell commands
+      --agent              Agentic mode: model calls packs as tools autonomously
       --dry-run            Show execution plan; with --do, generate command but don't run
       --no-daemon          Skip the daemon, load model directly
   -h, --help               Print help
   -V, --version            Print version
 
 Subcommands:
-  pack ls|init|add|show|gen    Manage packs
-  model ls|install|use         Manage models
+  pack ls|init|add|show|gen|export  Manage packs (export = MCP manifest)
+  model ls|install|use              Manage models
   config show|init|set         Manage configuration
   auth <provider>              Authenticate (github)
 ```

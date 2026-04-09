@@ -69,11 +69,22 @@ impl PhilInference {
         system_prompt: &str,
         user_input: &str,
         params: &CompletionParams,
-        mut writer: W,
+        writer: W,
     ) -> Result<String, InferenceError> {
         let prompt = format!(
             "<|system|>{system_prompt}<|end|>\n<|user|>{user_input}<|end|>\n<|assistant|>"
         );
+        self.complete_raw(&prompt, params, writer)
+    }
+
+    /// Generate a completion from a pre-formatted prompt string.
+    /// Used by the agentic tool-calling loop for multi-turn conversations.
+    pub fn complete_raw<W: Write>(
+        &self,
+        prompt: &str,
+        params: &CompletionParams,
+        mut writer: W,
+    ) -> Result<String, InferenceError> {
 
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(std::num::NonZeroU32::new(4096));
@@ -196,7 +207,7 @@ impl PhilInference {
 }
 
 /// Extract JSON from a string that might have markdown code fences.
-pub(crate) fn extract_json(text: &str) -> &str {
+pub fn extract_json(text: &str) -> &str {
     let trimmed = text.trim();
 
     // Try to find ```json ... ``` blocks

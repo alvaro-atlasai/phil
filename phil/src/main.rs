@@ -74,6 +74,10 @@ struct Cli {
     #[arg(long)]
     dry_run: bool,
 
+    /// Agentic mode: let the model autonomously call packs as tools
+    #[arg(long)]
+    agent: bool,
+
     /// Run as the background daemon (internal use)
     #[arg(long, hide = true)]
     daemon: bool,
@@ -130,6 +134,8 @@ enum PackAction {
         /// Description of what the pack should do
         description: String,
     },
+    /// Export all packs as an any2mcp YAML manifest (MCP server)
+    Export,
 }
 
 #[derive(Subcommand)]
@@ -256,6 +262,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
         let mode = if cli.execute {
             "--do (generate + execute shell command)"
+        } else if cli.agent {
+            "--agent (agentic loop, packs as tools)"
         } else if use_each {
             "--each (per-line inference)"
         } else {
@@ -273,6 +281,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("prompt:   {prompt}");
         if atty::isnt(atty::Stream::Stdin) && !use_each {
             eprintln!("stdin:    (piped data will be prepended to prompt)");
+        }
+        if cli.agent {
+            let tools = phil_core::agent::packs_as_tools();
+            let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+            eprintln!("tools:    {} packs — {}", tools.len(), names.join(", "));
         }
         // For --do, fall through to actually generate the command (just don't execute)
         if !cli.execute {
@@ -297,6 +310,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // --do mode: generate shell command and execute with confirmation
     if cli.execute {
         return run_do(&prompt, &github_model, use_apple, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon, cli.dry_run).await;
+    }
+
+    // --agent mode: agentic loop with packs as tools
+    if cli.agent {
+        return run_agent(&prompt, &system_prompt, &github_model, use_apple, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
     }
 
     // Read stdin if piped
@@ -659,6 +677,204 @@ async fn run_do(
     Ok(())
 }
 
+/// Agentic mode: model autonomously calls packs as tools.
+async fn run_agent(
+    prompt: &str,
+    system_prompt: &str,
+    github_model: &Option<phil_core::GitHubModel>,
+    use_apple: bool,
+    model: Option<&str>,
+    max_tokens: u32,
+    temperature: f32,
+    no_daemon: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use phil_core::agent;
+
+    let tools = agent::packs_as_tools();
+    if tools.is_empty() {
+        return Err("no packs available as tools. Run `phil pack ls` to see available packs.".into());
+    }
+
+    // Read stdin if piped
+    let stdin_data = if atty::isnt(atty::Stream::Stdin) {
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf)?;
+        if buf.is_empty() { None } else { Some(buf) }
+    } else {
+        None
+    };
+
+    let user_input = match stdin_data {
+        Some(data) => format!("--- INPUT DATA ---\n{data}\n--- END DATA ---\n\n{prompt}"),
+        None => prompt.to_string(),
+    };
+
+    eprintln!("phil: agent mode — {} tools available", tools.len());
+
+    // Helper: call whichever model backend is active
+    let complete = |system: &str, input: &str| -> Result<String, Box<dyn std::error::Error>> {
+        if let Some(ref gh) = github_model {
+            let token = github::load_token()?;
+            // We can't use async inside a sync closure easily, so block_on
+            let rt = tokio::runtime::Handle::current();
+            let text = rt.block_on(github::complete(&token, gh.api_name, system, input, temperature, max_tokens))?;
+            Ok(text)
+        } else if use_apple {
+            Ok(apple::apple_complete(system, input, temperature, max_tokens)?)
+        } else if !no_daemon && model.is_none() {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(ensure_daemon_running())?;
+            let req = DaemonRequest {
+                system_prompt: system.to_string(),
+                user_input: input.to_string(),
+                max_tokens,
+                temperature,
+                top_p: 0.9,
+            };
+            let text = rt.block_on(daemon::daemon_complete(&req))?;
+            Ok(text)
+        } else {
+            let model_path = match model {
+                Some(p) => std::path::PathBuf::from(p),
+                None => {
+                    let mgr = ModelManager::new()?;
+                    let rt = tokio::runtime::Handle::current();
+                    rt.block_on(mgr.ensure_model())?
+                }
+            };
+            let inference = PhilInference::load(&model_path)?;
+            let params = CompletionParams { max_tokens, temperature, ..Default::default() };
+            Ok(inference.complete(system, input, &params)?)
+        }
+    };
+
+    // Helper: execute a pack with the active backend
+    let execute_pack = |pack_name: &str, input: &str| -> Result<String, Box<dyn std::error::Error>> {
+        let pack = phil_core::pack::load_pack(pack_name)?;
+        let temp = pack.temperature.unwrap_or(temperature);
+        let mt = pack.max_tokens.unwrap_or(max_tokens);
+
+        if let Some(ref gh) = github_model {
+            let token = github::load_token()?;
+            let rt = tokio::runtime::Handle::current();
+            Ok(rt.block_on(github::complete(&token, gh.api_name, &pack.system, input, temp, mt))?)
+        } else if use_apple {
+            Ok(apple::apple_complete(&pack.system, input, temp, mt)?)
+        } else if !no_daemon && model.is_none() {
+            let rt = tokio::runtime::Handle::current();
+            let req = DaemonRequest {
+                system_prompt: pack.system.clone(),
+                user_input: input.to_string(),
+                max_tokens: mt,
+                temperature: temp,
+                top_p: 0.9,
+            };
+            Ok(rt.block_on(daemon::daemon_complete(&req))?)
+        } else {
+            let model_path = match model {
+                Some(p) => std::path::PathBuf::from(p),
+                None => {
+                    let mgr = ModelManager::new()?;
+                    let rt = tokio::runtime::Handle::current();
+                    rt.block_on(mgr.ensure_model())?
+                }
+            };
+            let inference = PhilInference::load(&model_path)?;
+            let params = CompletionParams { max_tokens: mt, temperature: temp, ..Default::default() };
+            Ok(inference.complete(&pack.system, input, &params)?)
+        }
+    };
+
+    // Build initial prompt with tools
+    let tools_json = serde_json::to_string(
+        &tools.iter().map(|t| serde_json::json!({
+            "name": t.name,
+            "description": t.description,
+            "parameters": t.parameters,
+        })).collect::<Vec<_>>()
+    ).unwrap_or_else(|_| "[]".into());
+
+    let agent_system = format!(
+        "{system_prompt}\n\n\
+         You have access to the following tools (packs). When a tool would help, call it by outputting ONLY a JSON object:\n\
+         {{\"name\": \"tool_name\", \"arguments\": {{\"input\": \"the text to process\"}}}}\n\n\
+         After receiving a tool result, use it to form your final answer as plain text.\n\
+         Available tools: {tools_json}"
+    );
+
+    let max_rounds = 5;
+    let mut conversation_context = user_input.clone();
+
+    for round in 0..max_rounds {
+        let output = complete(&agent_system, &conversation_context)?;
+        let output = output.trim().to_string();
+
+        match agent::parse_model_output(&output) {
+            agent::AgentStep::Done(text) => {
+                print!("{text}");
+                if !text.ends_with('\n') {
+                    println!();
+                }
+                return Ok(());
+            }
+            agent::AgentStep::ToolCalls(calls) => {
+                for call in &calls {
+                    eprintln!("  [{}/{}] @{}", round + 1, max_rounds, call.name);
+
+                    let input = match &call.arguments {
+                        serde_json::Value::Object(map) => {
+                            map.get("input").and_then(|v| v.as_str()).unwrap_or("").to_string()
+                        }
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => String::new(),
+                    };
+
+                    // Use original stdin data as input if the tool call has no specific input
+                    let tool_input = if input.is_empty() {
+                        conversation_context.clone()
+                    } else {
+                        input
+                    };
+
+                    match execute_pack(&call.name, &tool_input) {
+                        Ok(result) => {
+                            let preview = if result.len() > 100 {
+                                format!("{}...", &result[..100])
+                            } else {
+                                result.clone()
+                            };
+                            eprintln!("  ← {}", preview.replace('\n', " "));
+                            // Feed result back: original context + tool result
+                            conversation_context = format!(
+                                "{user_input}\n\nI called @{name} and got this result:\n{result}\n\nUse this result to answer the original request.",
+                                name = call.name,
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("  ✗ @{}: {e}", call.name);
+                            conversation_context = format!(
+                                "{user_input}\n\nI tried calling @{name} but it failed: {e}\n\nAnswer without using that tool.",
+                                name = call.name,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Exhausted rounds — force final answer
+    let output = complete(
+        &agent_system,
+        &format!("{conversation_context}\n\nProvide your final answer now based on the information gathered."),
+    )?;
+    print!("{}", output.trim());
+    if !output.trim().ends_with('\n') {
+        println!();
+    }
+    Ok(())
+}
+
 /// Ensure the daemon is running, starting it if needed.
 async fn ensure_daemon_running() -> Result<(), Box<dyn std::error::Error>> {
     if daemon::daemon_is_running().await {
@@ -844,6 +1060,34 @@ async fn handle_pack_action(action: PackAction) -> Result<(), Box<dyn std::error
                     eprintln!("\nYou can save this manually to ~/.phil/packs/<name>.toml");
                 }
             }
+            Ok(())
+        }
+        PackAction::Export => {
+            let packs = pack::list_packs_meta()?;
+            if packs.is_empty() {
+                return Err("no packs available to export".into());
+            }
+
+            // Generate any2mcp-compatible YAML manifest
+            println!("binary: phil");
+            println!("description: Phil AI packs — reusable prompt-based tools powered by local/cloud LLMs");
+            println!("tools:");
+            for p in &packs {
+                println!("  - name: {}", p.name);
+                println!("    description: {}", p.description);
+                println!("    subcommand: [\"@{}\"]", p.name);
+                println!("    args:");
+                println!("      - name: input");
+                println!("        description: The text input to process (passed as trailing argument)");
+                println!("        required: false");
+            }
+
+            eprintln!("\n# Save this manifest and serve it:");
+            eprintln!("#   phil pack export > phil-packs.yaml");
+            eprintln!("#   any2mcp serve --manifest phil-packs.yaml");
+            eprintln!("#");
+            eprintln!("# Or configure directly in your MCP client:");
+            eprintln!("# {{\"mcpServers\": {{\"phil\": {{\"command\": \"any2mcp\", \"args\": [\"phil-packs.yaml\"]}}}}}}");
             Ok(())
         }
     }

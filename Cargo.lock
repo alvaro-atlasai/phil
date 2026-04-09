@@ -1225,6 +1225,7 @@ dependencies = [
  "clap",
  "phil-core",
  "reqwest",
+ "serde_json",
  "tokio",
  "toml",
 ]
