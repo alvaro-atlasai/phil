@@ -10,19 +10,20 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
             name: darwin-arm64
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             name: darwin-amd64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: linux-amd64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             name: linux-arm64
 
     runs-on: ${{ matrix.os }}
@@ -36,17 +37,8 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install cross-compilation deps (Linux ARM64)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake libclang-dev
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
-
-      - name: Install system deps (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake libclang-dev
 
       - name: Build
@@ -92,3 +84,60 @@ jobs:
           files: |
             artifacts/*.tar.gz
             artifacts/checksums.txt
+
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: phil-darwin-arm64
+          path: artifacts
+
+      - name: Update Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256=$(sha256sum artifacts/phil-darwin-arm64.tar.gz | awk '{print $1}')
+
+          cat > phil.rb <<'FORMULA'
+          class Phil < Formula
+            desc "Pipe anything through AI — local LLM CLI with packs, agent mode, and MCP"
+            homepage "https://github.com/alvaro-atlasai/phil"
+            url "https://github.com/alvaro-atlasai/phil/releases/download/v__VERSION__/phil-darwin-arm64.tar.gz"
+            sha256 "__SHA256__"
+            license "MIT"
+
+            def install
+              bin.install "phil"
+              bin.install "any2mcp"
+            end
+
+            test do
+              assert_match "phil", shell_output("#{bin}/phil --version")
+            end
+          end
+          FORMULA
+
+          sed -i 's/^          //' phil.rb
+          sed -i "s/__VERSION__/${VERSION}/g" phil.rb
+          sed -i "s/__SHA256__/${SHA256}/g" phil.rb
+
+          if [ -n "$TAP_TOKEN" ]; then
+            git clone "https://x-access-token:${TAP_TOKEN}@github.com/alvaro-atlasai/homebrew-tap.git" tap
+            mkdir -p tap/Formula
+            cp phil.rb tap/Formula/phil.rb
+            cd tap
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add Formula/phil.rb
+            git commit -m "phil v${VERSION}" || true
+            git push
+          else
+            echo "::warning::TAP_TOKEN not set — skipping Homebrew tap update"
+            echo "Formula that would be published:"
+            cat phil.rb
+          fi

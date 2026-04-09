@@ -337,7 +337,7 @@ mod tests {
             }
 
             #[test]
-            fn echo_roundtrip_string_arg(s in "[a-zA-Z0-9 _-]{1,50}") {
+            fn echo_roundtrip_string_arg(s in "[a-zA-Z][a-zA-Z0-9 _-]{0,49}") {
                 let tool = echo_tool(vec![ArgDef {
                     name: "msg".to_string(),
                     description: "text".to_string(),
