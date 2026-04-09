@@ -274,7 +274,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if atty::isnt(atty::Stream::Stdin) && !use_each {
             eprintln!("stdin:    (piped data will be prepended to prompt)");
         }
-        return Ok(());
+        // For --do, fall through to actually generate the command (just don't execute)
+        if !cli.execute {
+            return Ok(());
+        }
     }
 
     // --each mode: process each stdin line separately
@@ -293,7 +296,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // --do mode: generate shell command and execute with confirmation
     if cli.execute {
-        return run_do(&prompt, &github_model, use_apple, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon).await;
+        return run_do(&prompt, &github_model, use_apple, cli.model.as_deref(), max_tokens, temperature, cli.no_daemon, cli.dry_run).await;
     }
 
     // Read stdin if piped
@@ -555,6 +558,7 @@ async fn run_do(
     max_tokens: u32,
     temperature: f32,
     no_daemon: bool,
+    dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let system = DO_SYSTEM_PROMPT;
 
@@ -604,6 +608,13 @@ async fn run_do(
 
     // Display the command
     eprintln!("\n  \x1b[1;36m{}\x1b[0m\n", command_text);
+
+    // --dry-run: show the generated command but don't execute
+    if dry_run {
+        // Also print to stdout (plain, no color) so it can be piped
+        println!("{command_text}");
+        return Ok(());
+    }
 
     // Ask for confirmation
     eprint!("Run this? [Y/n/e(dit)] ");
