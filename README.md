@@ -101,6 +101,30 @@ phil --do "find all files larger than 10MB"
 
 ![do mode demo](demos/do-mode.gif)
 
+### Inspect with `--dry-run`
+
+`--dry-run` shows what phil would do without calling the model:
+
+```bash
+phil --dry-run @commit
+# backend:  local   (phi4-mini, daemon=on)
+# mode:     completion
+# tokens:   100
+# temp:     0.1
+# system:   You generate a single conventional commit message...
+# prompt:   Conventional commit from staged diff
+```
+
+With `--do`, it generates the command but skips execution — useful for previewing or piping:
+
+```bash
+phil --dry-run --do "find all rust files modified today"
+#   find . -name '*.rs' -mtime 0
+
+# Pipe the generated command somewhere else:
+phil --dry-run --do "undo last git commit" | pbcopy
+```
+
 ### Redact PII from cloud output
 
 ```bash
@@ -280,7 +304,7 @@ Options:
       --temperature <F>    Sampling temperature (0.0–1.0) [default: 0.1]
       --each               Process each stdin line separately
       --do                 Generate and execute shell commands
-      --dry-run            Show execution plan without calling the model
+      --dry-run            Show execution plan; with --do, generate command but don't run
       --no-daemon          Skip the daemon, load model directly
   -h, --help               Print help
   -V, --version            Print version
